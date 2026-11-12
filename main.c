@@ -64,7 +64,7 @@ void work(struct Citizen *citizen, int hours)
         return;
     }
 
-    int income = hours * citizen->salary / 160;
+    int income = hours * citizen->salary / 50;
     if (citizen->health < 60)
     {
         income = income * 70 / 100;
@@ -271,12 +271,12 @@ int main(void)
     };
 
     struct Citizen Mia = {
-        "Mia", 19, 700, "Artist", 90, 10, 80,
+        "Mia", 19, 16000, "Artist", 90, 10, 80,
         3000, 40000, 35, 80, 10, 100, {0, 0, 0}
     };
 
     struct City palaroid = {
-        "Palaroid", {&genry, &Alex, &Mia}, 200, 1000
+        "Palaroid", {&genry, &Alex, &Mia}, 50, 500
     };
 
     city_status(palaroid);
