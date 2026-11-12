@@ -64,7 +64,7 @@ void work(struct Citizen *citizen, int hours)
         return;
     }
 
-    int income = hours * citizen->salary / 50;
+    int income = hours * citizen->salary / 160;
     if (citizen->health < 60)
     {
         income = income * 70 / 100;
