@@ -285,6 +285,31 @@ void execute_decision(struct Citizen *citizen, int decision)
         make_music(citizen);
     }
 }
+struct Citizen create_random_citizen(char *name, int id)
+{
+    struct Citizen c;
+    strcpy(c.name, name);
+    c.age = 18 + (rand() % 15); // Возраст от 18 до 32
+    c.money = 500 + (rand() % 1500); // Деньги от 500 до 2000
+    strcpy(c.job, "Freelancer"); // Пока всем дадим одну профессию для простоты
+    c.mood = 50 + (rand() % 50);
+    c.addiction = rand() % 40;
+    c.curiosity = rand() % 100;
+    c.salary = 2000 + (rand() % 4000);
+    c.savings = 0;
+    c.energy = 50 + (rand() % 50);
+    c.hunger = rand() % 50;
+    c.sleepiness = rand() % 50;
+    c.health = 50 + (rand() % 50);
+    c.music_skill = rand() % 100;
+    c.fame = rand() % 10;
+    
+    // Обнуляем отношения
+    for (int i = 0; i < MAX_CITIZENS; i++) {
+        c.relationships[i] = 0;
+    }
+    return c;
+}
 
 // ВОТ ОНА, НАША НОВАЯ ФУНКЦИЯ ДОБАВЛЕНИЯ ЖИТЕЛЯ
 void add_citizen(struct City *city, struct Citizen *new_citizen)
@@ -343,36 +368,49 @@ int main(void)
 {
     srand((unsigned int)time(NULL));
 
+    // 1. Создаем первых трех жителей
     struct Citizen genry = {
         "Genry", 20, 1000, "Engineer", 70, 30, 50,
-        5000, 0, 50, 50, 50, 85, 10, 0, {0} // music_skill = 10, fame = 0
+        5000, 0, 50, 50, 50, 85, 10, 0, {0}
     };
 
     struct Citizen Alex = {
         "Alex", 25, 1500, "Designer", 80, 20, 60,
-        4000, 0, 20, 60, 40, 55, 20, 0, {0} // music_skill = 20, fame = 0
+        4000, 0, 20, 60, 40, 55, 20, 0, {0}
     };
 
     struct Citizen Mia = {
         "Mia", 19, 700, "Artist", 90, 10, 80,
-        3000, 40000, 35, 80, 10, 100, 80, 5, {0} // music_skill = 80, fame = 5
+        3000, 40000, 35, 80, 10, 100, 80, 5, {0}
     };
 
-    // Настройка города
+    // 2. Создаем город и выделяем начальную память
     struct City palaroid;
     strcpy(palaroid.name, "Palaroid");
     palaroid.food_price = 50;
     palaroid.rent_price = 500;
     palaroid.capacity = 3; 
     palaroid.citizen_count = 0;
-    
-    // Выделяем память
     palaroid.citizens = malloc(palaroid.capacity * sizeof(struct Citizen*));
 
-    // Добавляем жителей
+    // 3. Добавляем первых трех жителей
     add_citizen(&palaroid, &genry);
     add_citizen(&palaroid, &Alex);
     add_citizen(&palaroid, &Mia);
+
+    // 4. Генерируем и добавляем 10 новых жителей
+    char *new_names[10] = {
+        "Ivan", "Elena", "Max", "Sofia", "Dmitry", 
+        "Anna", "Pavel", "Ksenia", "Artem", "Vika"
+    };
+
+    for (int i = 0; i < 10; i++)
+    {
+        // Выделяем память под нового жителя, чтобы он не удалился после цикла
+        struct Citizen *ptr = malloc(sizeof(struct Citizen));
+        *ptr = create_random_citizen(new_names[i], i); 
+        add_citizen(&palaroid, ptr);
+    }
 
     city_status(palaroid);
 
@@ -381,6 +419,7 @@ int main(void)
         citizen_status(*palaroid.citizens[i]);
     }
 
+    // 5. Запускаем симуляцию
     for (int day = 1; day <= DAYS_TO_SIMULATE; day++) {
         simulate_day(&palaroid, day);
     }
@@ -390,7 +429,11 @@ int main(void)
         citizen_status(*palaroid.citizens[i]);
     }
 
-    // Очистка памяти
+    // 6. ОЧИСТКА ПАМЯТИ (Критически важно!)
+    // Начинаем с 3, так как Генри, Алекс и Мия созданы на стеке, их free() делать нельзя!
+    for (int i = 3; i < palaroid.citizen_count; i++) {
+        free(palaroid.citizens[i]);
+    }
     free(palaroid.citizens);
 
     return 0;
