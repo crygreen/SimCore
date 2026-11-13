@@ -1,8 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <string.h>
 
-#define CITIZEN_COUNT 3
+#define MAX_CITIZENS 100
 #define DAYS_TO_SIMULATE 30
 
 struct Citizen
@@ -20,13 +21,15 @@ struct Citizen
     int hunger;
     int sleepiness;
     int health;
-    int relationships[CITIZEN_COUNT];
+    int relationships[MAX_CITIZENS];
 };
 
 struct City
 {
     char name[20];
-    struct Citizen *citizens[CITIZEN_COUNT];
+    struct Citizen **citizens;
+    int citizen_count;
+    int capacity;
     int food_price;
     int rent_price;
 };
@@ -136,6 +139,7 @@ void city_status(struct City city)
     printf("City: %s\n", city.name);
     printf("Food price: %d\n", city.food_price);
     printf("Rent price: %d\n", city.rent_price);
+    printf("Total citizens: %d\n", city.citizen_count);
     printf("====================\n");
 }
 
@@ -230,11 +234,30 @@ void execute_decision(struct Citizen *citizen, int decision)
     }
 }
 
+// ВОТ ОНА, НАША НОВАЯ ФУНКЦИЯ ДОБАВЛЕНИЯ ЖИТЕЛЯ
+void add_citizen(struct City *city, struct Citizen *new_citizen)
+{
+    if (city->citizen_count >= city->capacity)
+    {
+        city->capacity = city->capacity * 2;
+        city->citizens = realloc(city->citizens, city->capacity * sizeof(struct Citizen*));
+        
+        if (city->citizens == NULL) {
+            printf("Ошибка: не удалось выделить память!\n");
+            exit(1);
+        }
+        printf("[System]: Город расширен до %d мест.\n", city->capacity);
+    }
+
+    city->citizens[city->citizen_count] = new_citizen;
+    city->citizen_count++;
+}
+
 void simulate_day(struct City *city, int day)
 {
     printf("\n\n========== DAY %d ==========\n", day);
 
-    for (int i = 0; i < CITIZEN_COUNT; i++)
+    for (int i = 0; i < city->citizen_count; i++)
     {
         struct Citizen *citizen = city->citizens[i];
         
@@ -249,7 +272,7 @@ void simulate_day(struct City *city, int day)
     if (day % 30 == 1)
     {
         printf("\n========== RENT DAY ==========\n");
-        for (int i = 0; i < CITIZEN_COUNT; i++)
+        for (int i = 0; i < city->citizen_count; i++)
         {
             pay_rent(city->citizens[i], city);
         }
@@ -262,27 +285,39 @@ int main(void)
 
     struct Citizen genry = {
         "Genry", 20, 1000, "Engineer", 70, 30, 50,
-        5000, 0, 50, 50, 50, 85, {0, 0, 0}
+        5000, 0, 50, 50, 50, 85, {0}
     };
 
     struct Citizen Alex = {
         "Alex", 25, 1500, "Designer", 80, 20, 60,
-        4000, 0, 20, 60, 40, 55, {0, 0, 0}
+        4000, 0, 20, 60, 40, 55, {0}
     };
 
     struct Citizen Mia = {
-        "Mia", 19, 16000, "Artist", 90, 10, 80,
-        3000, 40000, 35, 80, 10, 100, {0, 0, 0}
+        "Mia", 19, 700, "Artist", 90, 10, 80,
+        3000, 40000, 35, 80, 10, 100, {0}
     };
 
-    struct City palaroid = {
-        "Palaroid", {&genry, &Alex, &Mia}, 50, 500
-    };
+    // Настройка города
+    struct City palaroid;
+    strcpy(palaroid.name, "Palaroid");
+    palaroid.food_price = 50;
+    palaroid.rent_price = 500;
+    palaroid.capacity = 3; 
+    palaroid.citizen_count = 0;
+    
+    // Выделяем память
+    palaroid.citizens = malloc(palaroid.capacity * sizeof(struct Citizen*));
+
+    // Добавляем жителей
+    add_citizen(&palaroid, &genry);
+    add_citizen(&palaroid, &Alex);
+    add_citizen(&palaroid, &Mia);
 
     city_status(palaroid);
 
     printf("\nStarting citizens:\n");
-    for (int i = 0; i < CITIZEN_COUNT; i++) {
+    for (int i = 0; i < palaroid.citizen_count; i++) {
         citizen_status(*palaroid.citizens[i]);
     }
 
@@ -291,9 +326,12 @@ int main(void)
     }
 
     printf("\n\n========== FINAL CITY REPORT ==========\n");
-    for (int i = 0; i < CITIZEN_COUNT; i++) {
+    for (int i = 0; i < palaroid.citizen_count; i++) {
         citizen_status(*palaroid.citizens[i]);
     }
+
+    // Очистка памяти
+    free(palaroid.citizens);
 
     return 0;
 }
