@@ -384,7 +384,7 @@ int main(void)
         3000, 40000, 35, 80, 10, 100, 80, 5, {0}
     };
 
-    // 2. Создаем город и выделяем начальную память
+    // 2. Создаем город и выделяем память
     struct City palaroid;
     strcpy(palaroid.name, "Palaroid");
     palaroid.food_price = 50;
@@ -393,12 +393,12 @@ int main(void)
     palaroid.citizen_count = 0;
     palaroid.citizens = malloc(palaroid.capacity * sizeof(struct Citizen*));
 
-    // 3. Добавляем первых трех жителей
+    // 3. Добавляем первых трех
     add_citizen(&palaroid, &genry);
     add_citizen(&palaroid, &Alex);
     add_citizen(&palaroid, &Mia);
 
-    // 4. Генерируем и добавляем 10 новых жителей
+    // 4. Добавляем 10 случайных
     char *new_names[10] = {
         "Ivan", "Elena", "Max", "Sofia", "Dmitry", 
         "Anna", "Pavel", "Ksenia", "Artem", "Vika"
@@ -406,35 +406,36 @@ int main(void)
 
     for (int i = 0; i < 10; i++)
     {
-        // Выделяем память под нового жителя, чтобы он не удалился после цикла
         struct Citizen *ptr = malloc(sizeof(struct Citizen));
         *ptr = create_random_citizen(new_names[i], i); 
         add_citizen(&palaroid, ptr);
     }
 
+    // 5. ПЕРВЫЙ И ЕДИНСТВЕННЫЙ ОТЧЕТ О СТАРТЕ
+    system("cls"); // Очищаем экран перед стартом
     city_status(palaroid);
-
     printf("\nStarting citizens:\n");
     for (int i = 0; i < palaroid.citizen_count; i++) {
         citizen_status(*palaroid.citizens[i]);
     }
+    printf("\nPress ENTER to start Day 30...");
+    getchar(); // Ждем нажатия Enter
 
-    // 5. Запускаем симуляцию
-    for (int day = 1; day <= DAYS_TO_SIMULATE; day++) {
-        simulate_day(&palaroid, day);
+    // 6. БЕСКОНЕЧНЫЙ ЦИКЛ ДНЕЙ
+    int current_day = 30; 
+    
+    while (1) 
+    {
+        system("cls"); // Очищаем экран перед каждым днем
+        
+        simulate_day(&palaroid, current_day);
+        
+        printf("\n========================================\n");
+        printf(" [Day %d finished. Press ENTER for Day %d]\n", current_day, current_day + 1);
+        
+        getchar(); // Ждем Enter для следующего дня
+        current_day++; 
     }
-
-    printf("\n\n========== FINAL CITY REPORT ==========\n");
-    for (int i = 0; i < palaroid.citizen_count; i++) {
-        citizen_status(*palaroid.citizens[i]);
-    }
-
-    // 6. ОЧИСТКА ПАМЯТИ (Критически важно!)
-    // Начинаем с 3, так как Генри, Алекс и Мия созданы на стеке, их free() делать нельзя!
-    for (int i = 3; i < palaroid.citizen_count; i++) {
-        free(palaroid.citizens[i]);
-    }
-    free(palaroid.citizens);
-
+    
     return 0;
 }
