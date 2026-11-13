@@ -21,7 +21,10 @@ struct Citizen
     int hunger;
     int sleepiness;
     int health;
-    int relationships[MAX_CITIZENS];
+    int music_skill;   // От 0 до 100       
+    int fame;   // От 0 до 100
+    int relationships[MAX_CITIZENS]; 
+      
 };
 
 struct City
@@ -47,6 +50,8 @@ void citizen_status(struct Citizen citizen)
     printf("Mood: %d\n", citizen.mood);
     printf("Energy: %d\n", citizen.energy);
     printf("Health: %d\n", citizen.health);
+    printf("Music Skill: %d\n", citizen.music_skill);
+    printf("Fame: %d\n", citizen.fame);
 }
 
 void add_money(struct Citizen *citizen, int amount)
@@ -172,11 +177,52 @@ void update_health(struct Citizen *citizen)
         printf("\n%s's health improved.\n", citizen->name);
     }
 }
+void make_music(struct Citizen *citizen)
+{
+    if (citizen->energy < 30)
+    {
+        printf("\n%s is too tired to make music.\n", citizen->name);
+        return;
+    }
+
+    // Тратим энергию и повышаем настроение (творчество приносит кайф)
+    citizen->energy -= 20;
+    citizen->mood += 10;
+    if (citizen->mood > 100) citizen->mood = 100;
+
+    // Растем в скилле (случайный прирост от 1 до 5)
+    int skill_gain = (rand() % 5) + 1;
+    citizen->music_skill += skill_gain;
+    if (citizen->music_skill > 100) citizen->music_skill = 100;
+
+    printf("\n%s spent the day making music. Skill increased by %d.\n", citizen->name, skill_gain);
+
+    // Если скилл прокачан, можно получить известность и деньги
+    if (citizen->music_skill > 50)
+    {
+        int fame_gain = (rand() % 3) + 1;
+        citizen->fame += fame_gain;
+        if (citizen->fame > 100) citizen->fame = 100;
+
+        // Доход зависит от известности и скилла
+        int income = (citizen->fame * citizen->music_skill) / 10;
+        if (income > 0)
+        {
+            citizen->money += income;
+            printf("The track got some attention! Gained %d fame and earned %d.\n", fame_gain, income);
+        }
+    }
+}
 
 int make_decision(struct Citizen *citizen)
 {
-    int weights[3] = {30, 50, 50};
+    // 0 = stay home, 1 = go outside, 2 = work, 3 = make music
+    int weights[4] = {30, 50, 50, 10}; // Базовый шанс музыки - 10
+
     weights[1] += citizen->curiosity;
+    
+    // Если скилл музыки высокий, житель хочет заниматься ею чаще
+    weights[3] += citizen->music_skill / 2; 
 
     if (citizen->mood < 50) weights[0] += 50 - citizen->mood;
     weights[2] -= citizen->addiction;
@@ -188,17 +234,18 @@ int make_decision(struct Citizen *citizen)
         weights[2] -= 60 - citizen->health;
     }
 
-    if (weights[0] < 0) weights[0] = 0;
-    if (weights[1] < 0) weights[1] = 0;
-    if (weights[2] < 0) weights[2] = 0;
+    // Защита от отрицательных весов
+    for (int i = 0; i < 4; i++) {
+        if (weights[i] < 0) weights[i] = 0;
+    }
 
-    int total_weight = weights[0] + weights[1] + weights[2];
+    int total_weight = weights[0] + weights[1] + weights[2] + weights[3];
     if (total_weight == 0) return 0;
 
     int random_value = rand() % total_weight;
     int accumulated = 0;
 
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < 4; i++)
     {
         accumulated += weights[i];
         if (random_value < accumulated) return i;
@@ -211,6 +258,7 @@ const char *decision_name(int decision)
     if (decision == 0) return "Stay home";
     if (decision == 1) return "Go outside";
     if (decision == 2) return "Work";
+    if (decision == 3) return "Make music";
     return "Unknown decision";
 }
 
@@ -231,6 +279,10 @@ void execute_decision(struct Citizen *citizen, int decision)
     {
         printf("\n%s decided to work.\n", citizen->name);
         work(citizen, 8);
+    }
+        else if (decision == 3)
+    {
+        make_music(citizen);
     }
 }
 
@@ -285,17 +337,17 @@ int main(void)
 
     struct Citizen genry = {
         "Genry", 20, 1000, "Engineer", 70, 30, 50,
-        5000, 0, 50, 50, 50, 85, {0}
+        5000, 0, 50, 50, 50, 85, 10, 0, {0} // music_skill = 10, fame = 0
     };
 
     struct Citizen Alex = {
         "Alex", 25, 1500, "Designer", 80, 20, 60,
-        4000, 0, 20, 60, 40, 55, {0}
+        4000, 0, 20, 60, 40, 55, 20, 0, {0} // music_skill = 20, fame = 0
     };
 
     struct Citizen Mia = {
         "Mia", 19, 700, "Artist", 90, 10, 80,
-        3000, 40000, 35, 80, 10, 100, {0}
+        3000, 40000, 35, 80, 10, 100, 80, 5, {0} // music_skill = 80, fame = 5
     };
 
     // Настройка города
