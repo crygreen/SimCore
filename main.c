@@ -328,6 +328,14 @@ void simulate_day(struct City *city, int day)
         {
             pay_rent(city->citizens[i], city);
         }
+            // Восстановление энергии после дня (сон)
+    for (int i = 0; i < city->citizen_count; i++)
+    {
+        struct Citizen *citizen = city->citizens[i];
+        citizen->energy += 40; // Восстанавливаем 40 единиц энергии
+        if (citizen->energy > 100) citizen->energy = 100; // Не больше 100
+        citizen->sleepiness = 0; // После сна сонливость проходит
+    }
     }
 }
 
