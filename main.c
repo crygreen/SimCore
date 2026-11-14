@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>
+#include <windows.h> // Для настройки кодировки консоли
 
 #define MAX_CITIZENS 100
 #define DAYS_TO_SIMULATE 30
@@ -36,7 +37,7 @@ struct City
     int rent_price;
 };
 
-// --- БАЗОВЫЕ ФУНКЦИИ ---
+// --- BASIC FUNCTIONS ---
 
 void citizen_status(struct Citizen citizen)
 {
@@ -162,7 +163,7 @@ void make_music(struct Citizen *citizen)
     }
 }
 
-// --- ЛОГИКА ПРИНЯТИЯ РЕШЕНИЙ ---
+// --- DECISION LOGIC ---
 
 int make_decision(struct Citizen *citizen)
 {
@@ -207,7 +208,7 @@ void execute_decision(struct Citizen *citizen, int decision)
     else if (decision == 3) { make_music(citizen); }
 }
 
-// --- ДИНАМИЧЕСКАЯ ПАМЯТЬ И СОЦИАЛКА ---
+// --- DYNAMIC MEMORY & SOCIAL ---
 
 void add_citizen(struct City *city, struct Citizen *new_citizen)
 {
@@ -249,8 +250,6 @@ void handle_social_interactions(struct City *city)
     for (int i = 0; i < city->citizen_count; i++)
     {
         struct Citizen *c1 = city->citizens[i];
-
-        // Долги
         if (c1->money < city->food_price)
         {
             for (int j = 0; j < city->citizen_count; j++)
@@ -268,8 +267,6 @@ void handle_social_interactions(struct City *city)
                 }
             }
         }
-
-        // Вражда
         for (int j = i + 1; j < city->citizen_count; j++)
         {
             if (c1->relationships[j] < -20)
@@ -282,11 +279,10 @@ void handle_social_interactions(struct City *city)
     }
 }
 
-// --- СЛУЧАЙНЫЕ СОБЫТИЯ ---
+// --- RANDOM EVENTS ---
 void trigger_random_event(struct Citizen *citizen)
 {
-    // Временно 50%, чтобы ты точно увидел
-    if (rand() % 100 < 50) 
+    if (rand() % 100 < 20) 
     {
         int event_type = rand() % 4;
         printf("[Event]: ");
@@ -343,14 +339,107 @@ void trigger_random_event(struct Citizen *citizen)
     }
 }
 
-// --- ДВИЖОК СИМУЛЯЦИИ ---
+// --- SAVE & LOAD (FILE I/O) ---
+
+void save_game(struct City *city, int current_day)
+{
+    FILE *file = fopen("savegame.txt", "w");
+    if (file == NULL) {
+        printf("Error: could not create save file!\n");
+        return;
+    }
+
+    fprintf(file, "%d\n", current_day);
+    fprintf(file, "%d\n", city->citizen_count);
+
+    for (int i = 0; i < city->citizen_count; i++)
+    {
+        struct Citizen *c = city->citizens[i];
+        fprintf(file, "%s %d %d %d %d %d %d %d %d\n", 
+                c->name, c->age, c->money, c->mood, c->energy, c->health, c->music_skill, c->fame, c->salary);
+    }
+
+    fclose(file);
+    printf("\n[System]: Game saved to savegame.txt!\n");
+}
+void log_stats_to_csv(struct City *city, int day)
+{
+    // Open file in append mode ("a") to add new data at the end
+    FILE *file = fopen("simcore_stats.csv", "a");
+    if (file == NULL) {
+        printf("Error: could not open CSV file!\n");
+        return;
+    }
+
+    // Check if file is empty. If empty, write headers (Header)
+    fseek(file, 0, SEEK_END);
+    if (ftell(file) == 0) {
+        fprintf(file, "Day,Name,Money,Health,Mood,Energy,MusicSkill,Fame\n");
+    }
+
+    // Write stats for each citizen
+    for (int i = 0; i < city->citizen_count; i++)
+    {
+        struct Citizen *c = city->citizens[i];
+        // Format: Day, Name, Money, Health, Mood, Energy, MusicSkill, Fame
+        fprintf(file, "%d,%s,%d,%d,%d,%d,%d,%d\n",
+                day, c->name, c->money, c->health, c->mood, c->energy, c->music_skill, c->fame);
+    }
+
+    fclose(file);
+}
+int load_game(struct City *city, int *current_day)
+{
+    FILE *file = fopen("savegame.txt", "r");
+    if (file == NULL) {
+        printf("Save not found. Starting a new game.\n");
+        return 0; 
+    }
+
+    fscanf(file, "%d", current_day);
+    int count;
+    fscanf(file, "%d", &count);
+
+    printf("Loading save... Day: %d, Citizens: %d\n", *current_day, count);
+
+    for (int i = 0; i < city->citizen_count; i++) {
+        free(city->citizens[i]);
+    }
+    city->citizen_count = 0;
+    
+    city->capacity = count > 3 ? count : 3;
+    city->citizens = realloc(city->citizens, city->capacity * sizeof(struct Citizen*));
+
+    for (int i = 0; i < count; i++)
+    {
+        struct Citizen *ptr = malloc(sizeof(struct Citizen));
+        
+        fscanf(file, "%s %d %d %d %d %d %d %d %d", 
+               ptr->name, &ptr->age, &ptr->money, &ptr->mood, 
+               &ptr->energy, &ptr->health, &ptr->music_skill, &ptr->fame, &ptr->salary);
+        
+        strcpy(ptr->job, "Loaded");
+        ptr->addiction = 0;
+        ptr->curiosity = 50;
+        ptr->savings = 0;
+        ptr->hunger = 0;
+        ptr->sleepiness = 0;
+        for (int j = 0; j < MAX_CITIZENS; j++) ptr->relationships[j] = 0;
+
+        add_citizen(city, ptr);
+    }
+
+    fclose(file);
+    return 1;
+}
+
+// --- SIMULATION ENGINE ---
 void simulate_day(struct City *city, int day)
 {
     printf("\n\n========== DAY %d ==========\n", day);
     
     int actions[MAX_CITIZENS]; 
 
-    // 1. ДЕЙСТВИЯ
     for (int i = 0; i < city->citizen_count; i++)
     {
         struct Citizen *citizen = city->citizens[i];
@@ -360,12 +449,19 @@ void simulate_day(struct City *city, int day)
         execute_decision(citizen, decision);
         buy_food(citizen, city);
         update_health(citizen);
+            if (day % 30 == 1)
+    {
+        printf("\n========== RENT DAY ==========\n");
+        for (int i = 0; i < city->citizen_count; i++) pay_rent(city->citizens[i], city);
     }
 
-    // 2. СОЦИАЛКА (Долги/Вражда)
+    // Log stats to CSV at the end of the day
+    log_stats_to_csv(city, day);
+}
+    }
+
     handle_social_interactions(city);
 
-    // 3. ОБНОВЛЕНИЕ ОТНОШЕНИЙ
     for (int i = 0; i < city->citizen_count; i++)
     {
         for (int j = i + 1; j < city->citizen_count; j++)
@@ -377,7 +473,6 @@ void simulate_day(struct City *city, int day)
                 c1->relationships[j] += 2;
                 c2->relationships[i] += 2;
                 
-                // ФИКС ЛОГОВ: пишем только каждые 10 очков
                 if (c1->relationships[j] % 10 == 0) 
                 {
                     printf("[Social]: %s and %s are becoming closer friends! (Level %d)\n", c1->name, c2->name, c1->relationships[j]);
@@ -394,7 +489,6 @@ void simulate_day(struct City *city, int day)
         }
     }
 
-    // 4. СОН
     for (int i = 0; i < city->citizen_count; i++)
     {
         struct Citizen *citizen = city->citizens[i];
@@ -403,14 +497,12 @@ void simulate_day(struct City *city, int day)
         citizen->sleepiness = 0;
     }
 
-    // 5. СЛУЧАЙНЫЕ СОБЫТИЯ (В КОНЦЕ ДНЯ)
     printf("\n--- END OF DAY EVENTS ---\n");
     for (int i = 0; i < city->citizen_count; i++)
     {
         trigger_random_event(city->citizens[i]);
     }
 
-    // 6. АРЕНДА
     if (day % 30 == 1)
     {
         printf("\n========== RENT DAY ==========\n");
@@ -418,14 +510,14 @@ void simulate_day(struct City *city, int day)
     }
 }
 
-// --- ГЛАВНАЯ ФУНКЦИЯ ---
+// --- MAIN FUNCTION ---
 int main(void)
 {
-    srand((unsigned int)time(NULL));
+    // Fix for Windows console encoding
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
 
-    struct Citizen genry = {"Genry", 20, 1000, "Engineer", 70, 30, 50, 5000, 0, 50, 50, 50, 85, 10, 0, {0}};
-    struct Citizen Alex = {"Alex", 25, 1500, "Designer", 80, 20, 60, 4000, 0, 20, 60, 40, 55, 20, 0, {0}};
-    struct Citizen Mia = {"Mia", 19, 700, "Artist", 90, 10, 80, 3000, 40000, 35, 80, 10, 100, 80, 5, {0}};
+    srand((unsigned int)time(NULL));
 
     struct City palaroid;
     strcpy(palaroid.name, "Palaroid");
@@ -435,28 +527,66 @@ int main(void)
     palaroid.citizen_count = 0;
     palaroid.citizens = malloc(palaroid.capacity * sizeof(struct Citizen*));
 
-    add_citizen(&palaroid, &genry);
-    add_citizen(&palaroid, &Alex);
-    add_citizen(&palaroid, &Mia);
+    int current_day = 30; 
 
-    char *new_names[10] = {"Ivan", "Elena", "Max", "Sofia", "Dmitry", "Anna", "Pavel", "Ksenia", "Artem", "Vika"};
-    for (int i = 0; i < 10; i++)
+    system("cls");
+    printf("====================================\n");
+    printf("          SIMCORE v1.0\n");
+    printf("====================================\n");
+    printf("Load save? (1 - Yes, 0 - No): ");
+    
+    int choice;
+    scanf("%d", &choice);
+    
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
+
+    if (choice == 1) 
     {
-        struct Citizen *ptr = malloc(sizeof(struct Citizen));
-        *ptr = create_random_citizen(new_names[i]); 
-        add_citizen(&palaroid, ptr);
+        if (!load_game(&palaroid, &current_day)) 
+        {
+            printf("Failed to load. Creating a new city...\n");
+            choice = 0; 
+        }
+    }
+
+    if (choice == 0) 
+    {
+            if (choice == 0) 
+    {
+        // Remove old CSV file if starting a new game
+        remove("simcore_stats.csv"); 
+        
+        // ... дальше твой код создания жителей ...
+        struct Citizen genry = {"Genry", 20, 1000, "Engineer", 70, 30, 50, 5000, 0, 50, 50, 50, 85, 10, 0, {0}};
+        struct Citizen Alex = {"Alex", 25, 1500, "Designer", 80, 20, 60, 4000, 0, 20, 60, 40, 55, 20, 0, {0}};
+        struct Citizen Mia = {"Mia", 19, 700, "Artist", 90, 10, 80, 3000, 40000, 35, 80, 10, 100, 80, 5, {0}};
+
+        add_citizen(&palaroid, &genry);
+        add_citizen(&palaroid, &Alex);
+        add_citizen(&palaroid, &Mia);
+
+        char *new_names[10] = {"Ivan", "Elena", "Max", "Sofia", "Dmitry", "Anna", "Pavel", "Ksenia", "Artem", "Vika"};
+        for (int i = 0; i < 10; i++)
+        {
+            struct Citizen *ptr = malloc(sizeof(struct Citizen));
+            *ptr = create_random_citizen(new_names[i]); 
+            add_citizen(&palaroid, ptr);
+        }
     }
 
     system("cls");
     city_status(palaroid);
-    printf("\nPress ENTER to start Day 30...");
+    printf("\nPress ENTER to start...");
     getchar();
 
-    int current_day = 30; 
     while (1) 
     {
         system("cls");
         simulate_day(&palaroid, current_day);
+        
+        save_game(&palaroid, current_day);
+
         printf("\n========================================\n");
         printf(" [Day %d finished. Press ENTER for Day %d]\n", current_day, current_day + 1);
         getchar(); 
