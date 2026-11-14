@@ -166,7 +166,7 @@ void make_music(struct Citizen *citizen)
 
 int make_decision(struct Citizen *citizen)
 {
-    int weights[4] = {30, 50, 50, 10}; // 0=home, 1=outside, 2=work, 3=music
+    int weights[4] = {30, 50, 50, 10}; 
     weights[1] += citizen->curiosity;
     weights[3] += citizen->music_skill / 2; 
 
@@ -282,13 +282,75 @@ void handle_social_interactions(struct City *city)
     }
 }
 
-// --- ДВИЖОК СИМУЛЯЦИИ ---
+// --- СЛУЧАЙНЫЕ СОБЫТИЯ ---
+void trigger_random_event(struct Citizen *citizen)
+{
+    // Временно 50%, чтобы ты точно увидел
+    if (rand() % 100 < 50) 
+    {
+        int event_type = rand() % 4;
+        printf("[Event]: ");
+        
+        if (event_type == 0) 
+        {
+            int found_money = 50 + (rand() % 150);
+            citizen->money += found_money;
+            citizen->mood += 10;
+            if (citizen->mood > 100) citizen->mood = 100;
+            printf("%s found %d rubles on the street! (Money +%d, Mood +10)\n", citizen->name, found_money, found_money);
+        }
+        else if (event_type == 1) 
+        {
+            int health_loss = 10 + (rand() % 15);
+            citizen->health -= health_loss;
+            if (citizen->health < 0) citizen->health = 0;
+            printf("%s caught a cold. (Health -%d)\n", citizen->name, health_loss);
+        }
+        else if (event_type == 2) 
+        {
+            if (citizen->music_skill > 30) 
+            {
+                int fame_gain = 2 + (rand() % 5);
+                citizen->fame += fame_gain;
+                citizen->mood += 15;
+                if (citizen->mood > 100) citizen->mood = 100;
+                printf("%s's track went viral! (Fame +%d, Mood +15)\n", citizen->name, fame_gain);
+            }
+            else
+            {
+                citizen->mood += 10;
+                if (citizen->mood > 100) citizen->mood = 100;
+                printf("%s had a great day and met an old friend. (Mood +10)\n", citizen->name);
+            }
+        }
+        else 
+        {
+            int lost_money = 30 + (rand() % 100);
+            if (citizen->money >= lost_money)
+            {
+                citizen->money -= lost_money;
+                citizen->mood -= 15;
+                if (citizen->mood < 0) citizen->mood = 0;
+                printf("%s lost their wallet. (Money -%d, Mood -15)\n", citizen->name, lost_money);
+            }
+            else
+            {
+                citizen->mood -= 10;
+                if (citizen->mood < 0) citizen->mood = 0;
+                printf("%s dropped their phone and cracked the screen. (Mood -10)\n", citizen->name);
+            }
+        }
+    }
+}
 
+// --- ДВИЖОК СИМУЛЯЦИИ ---
 void simulate_day(struct City *city, int day)
 {
     printf("\n\n========== DAY %d ==========\n", day);
+    
     int actions[MAX_CITIZENS]; 
 
+    // 1. ДЕЙСТВИЯ
     for (int i = 0; i < city->citizen_count; i++)
     {
         struct Citizen *citizen = city->citizens[i];
@@ -300,8 +362,10 @@ void simulate_day(struct City *city, int day)
         update_health(citizen);
     }
 
+    // 2. СОЦИАЛКА (Долги/Вражда)
     handle_social_interactions(city);
 
+    // 3. ОБНОВЛЕНИЕ ОТНОШЕНИЙ
     for (int i = 0; i < city->citizen_count; i++)
     {
         for (int j = i + 1; j < city->citizen_count; j++)
@@ -312,7 +376,12 @@ void simulate_day(struct City *city, int day)
                 struct Citizen *c2 = city->citizens[j];
                 c1->relationships[j] += 2;
                 c2->relationships[i] += 2;
-                printf("[Social]: %s and %s spent time together.\n", c1->name, c2->name);
+                
+                // ФИКС ЛОГОВ: пишем только каждые 10 очков
+                if (c1->relationships[j] % 10 == 0) 
+                {
+                    printf("[Social]: %s and %s are becoming closer friends! (Level %d)\n", c1->name, c2->name, c1->relationships[j]);
+                }
 
                 if (actions[i] == 3 && c1->music_skill > 50 && c2->music_skill > 50) 
                 {
@@ -325,6 +394,7 @@ void simulate_day(struct City *city, int day)
         }
     }
 
+    // 4. СОН
     for (int i = 0; i < city->citizen_count; i++)
     {
         struct Citizen *citizen = city->citizens[i];
@@ -333,6 +403,14 @@ void simulate_day(struct City *city, int day)
         citizen->sleepiness = 0;
     }
 
+    // 5. СЛУЧАЙНЫЕ СОБЫТИЯ (В КОНЦЕ ДНЯ)
+    printf("\n--- END OF DAY EVENTS ---\n");
+    for (int i = 0; i < city->citizen_count; i++)
+    {
+        trigger_random_event(city->citizens[i]);
+    }
+
+    // 6. АРЕНДА
     if (day % 30 == 1)
     {
         printf("\n========== RENT DAY ==========\n");
@@ -341,7 +419,6 @@ void simulate_day(struct City *city, int day)
 }
 
 // --- ГЛАВНАЯ ФУНКЦИЯ ---
-
 int main(void)
 {
     srand((unsigned int)time(NULL));
