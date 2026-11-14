@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>
-#include <windows.h> // Для настройки кодировки консоли
+#include <windows.h> // For console encoding
 
 #define MAX_CITIZENS 100
 #define DAYS_TO_SIMULATE 30
@@ -25,6 +25,16 @@ struct Citizen
     int music_skill;
     int fame;
     int relationships[MAX_CITIZENS];
+    
+    // --- Coordinates and Movement ---
+    int x;
+    int y;
+    int target_x;
+    int target_y;
+    int home_x;
+    int home_y;
+    int work_x;
+    int work_y;
 };
 
 struct City
@@ -202,10 +212,34 @@ const char *decision_name(int decision)
 
 void execute_decision(struct Citizen *citizen, int decision)
 {
-    if (decision == 0) { printf("\n%s stayed at home.\n", citizen->name); rest(citizen); }
-    else if (decision == 1) { printf("\n%s went outside.\n", citizen->name); citizen->mood += 5; if (citizen->mood > 100) citizen->mood = 100; }
-    else if (decision == 2) { printf("\n%s decided to work.\n", citizen->name); work(citizen, 8); }
-    else if (decision == 3) { make_music(citizen); }
+    if (decision == 0) 
+    { 
+        printf("\n%s stayed at home.\n", citizen->name); 
+        citizen->target_x = citizen->home_x; 
+        citizen->target_y = citizen->home_y;
+        rest(citizen); 
+    }
+    else if (decision == 1) 
+    { 
+        printf("\n%s went outside.\n", citizen->name); 
+        citizen->target_x = 350 + (rand() % 200); 
+        citizen->target_y = 250 + (rand() % 200);
+        citizen->mood += 5; 
+        if (citizen->mood > 100) citizen->mood = 100; 
+    }
+    else if (decision == 2) 
+    { 
+        printf("\n%s decided to work.\n", citizen->name); 
+        citizen->target_x = citizen->work_x; 
+        citizen->target_y = citizen->work_y;
+        work(citizen, 8); 
+    }
+    else if (decision == 3) 
+    { 
+        citizen->target_x = citizen->work_x; 
+        citizen->target_y = citizen->work_y;
+        make_music(citizen); 
+    }
 }
 
 // --- DYNAMIC MEMORY & SOCIAL ---
@@ -241,6 +275,18 @@ struct Citizen create_random_citizen(char *name)
     c.health = 50 + (rand() % 50);
     c.music_skill = rand() % 100;
     c.fame = rand() % 10;
+    
+    c.home_x = 50 + (rand() % 250); 
+    c.home_y = 50 + (rand() % 500);
+    
+    c.work_x = 600 + (rand() % 250);
+    c.work_y = 50 + (rand() % 500);
+    
+    c.x = c.home_x;
+    c.y = c.home_y;
+    c.target_x = c.home_x;
+    c.target_y = c.home_y;
+
     for (int i = 0; i < MAX_CITIZENS; i++) c.relationships[i] = 0;
     return c;
 }
@@ -339,6 +385,27 @@ void trigger_random_event(struct Citizen *citizen)
     }
 }
 
+void update_movement(struct Citizen *citizen)
+{
+    int speed = 20; 
+
+    if (citizen->x < citizen->target_x) {
+        citizen->x += speed;
+        if (citizen->x > citizen->target_x) citizen->x = citizen->target_x;
+    } else if (citizen->x > citizen->target_x) {
+        citizen->x -= speed;
+        if (citizen->x < citizen->target_x) citizen->x = citizen->target_x;
+    }
+
+    if (citizen->y < citizen->target_y) {
+        citizen->y += speed;
+        if (citizen->y > citizen->target_y) citizen->y = citizen->target_y;
+    } else if (citizen->y > citizen->target_y) {
+        citizen->y -= speed;
+        if (citizen->y < citizen->target_y) citizen->y = citizen->target_y;
+    }
+}
+
 // --- SAVE & LOAD (FILE I/O) ---
 
 void save_game(struct City *city, int current_day)
@@ -355,39 +422,15 @@ void save_game(struct City *city, int current_day)
     for (int i = 0; i < city->citizen_count; i++)
     {
         struct Citizen *c = city->citizens[i];
-        fprintf(file, "%s %d %d %d %d %d %d %d %d\n", 
-                c->name, c->age, c->money, c->mood, c->energy, c->health, c->music_skill, c->fame, c->salary);
+        // Added x and y coordinates to save data
+        fprintf(file, "%s %d %d %d %d %d %d %d %d %d %d\n", 
+                c->name, c->age, c->money, c->mood, c->energy, c->health, c->music_skill, c->fame, c->salary, c->x, c->y);
     }
 
     fclose(file);
     printf("\n[System]: Game saved to savegame.txt!\n");
 }
-void log_stats_to_csv(struct City *city, int day)
-{
-    // Open file in append mode ("a") to add new data at the end
-    FILE *file = fopen("simcore_stats.csv", "a");
-    if (file == NULL) {
-        printf("Error: could not open CSV file!\n");
-        return;
-    }
 
-    // Check if file is empty. If empty, write headers (Header)
-    fseek(file, 0, SEEK_END);
-    if (ftell(file) == 0) {
-        fprintf(file, "Day,Name,Money,Health,Mood,Energy,MusicSkill,Fame\n");
-    }
-
-    // Write stats for each citizen
-    for (int i = 0; i < city->citizen_count; i++)
-    {
-        struct Citizen *c = city->citizens[i];
-        // Format: Day, Name, Money, Health, Mood, Energy, MusicSkill, Fame
-        fprintf(file, "%d,%s,%d,%d,%d,%d,%d,%d\n",
-                day, c->name, c->money, c->health, c->mood, c->energy, c->music_skill, c->fame);
-    }
-
-    fclose(file);
-}
 int load_game(struct City *city, int *current_day)
 {
     FILE *file = fopen("savegame.txt", "r");
@@ -414,9 +457,10 @@ int load_game(struct City *city, int *current_day)
     {
         struct Citizen *ptr = malloc(sizeof(struct Citizen));
         
-        fscanf(file, "%s %d %d %d %d %d %d %d %d", 
+        // Added x and y coordinates to load data
+        fscanf(file, "%s %d %d %d %d %d %d %d %d %d %d", 
                ptr->name, &ptr->age, &ptr->money, &ptr->mood, 
-               &ptr->energy, &ptr->health, &ptr->music_skill, &ptr->fame, &ptr->salary);
+               &ptr->energy, &ptr->health, &ptr->music_skill, &ptr->fame, &ptr->salary, &ptr->x, &ptr->y);
         
         strcpy(ptr->job, "Loaded");
         ptr->addiction = 0;
@@ -424,6 +468,15 @@ int load_game(struct City *city, int *current_day)
         ptr->savings = 0;
         ptr->hunger = 0;
         ptr->sleepiness = 0;
+        
+        // Set default targets and homes for loaded citizens
+        ptr->home_x = ptr->x;
+        ptr->home_y = ptr->y;
+        ptr->work_x = ptr->x;
+        ptr->work_y = ptr->y;
+        ptr->target_x = ptr->x;
+        ptr->target_y = ptr->y;
+
         for (int j = 0; j < MAX_CITIZENS; j++) ptr->relationships[j] = 0;
 
         add_citizen(city, ptr);
@@ -431,6 +484,32 @@ int load_game(struct City *city, int *current_day)
 
     fclose(file);
     return 1;
+}
+
+// --- DATA LOGGING (CSV) ---
+void log_stats_to_csv(struct City *city, int day)
+{
+    FILE *file = fopen("simcore_stats.csv", "a");
+    if (file == NULL) {
+        printf("Error: could not open CSV file!\n");
+        return;
+    }
+
+    fseek(file, 0, SEEK_END);
+    if (ftell(file) == 0) {
+        // Added X and Y columns to the header
+        fprintf(file, "Day,Name,Money,Health,Mood,Energy,MusicSkill,Fame,X,Y\n");
+    }
+
+    for (int i = 0; i < city->citizen_count; i++)
+    {
+        struct Citizen *c = city->citizens[i];
+        // Added c->x and c->y values to the string
+        fprintf(file, "%d,%s,%d,%d,%d,%d,%d,%d,%d,%d\n",
+                day, c->name, c->money, c->health, c->mood, c->energy, c->music_skill, c->fame, c->x, c->y);
+    }
+
+    fclose(file);
 }
 
 // --- SIMULATION ENGINE ---
@@ -449,15 +528,6 @@ void simulate_day(struct City *city, int day)
         execute_decision(citizen, decision);
         buy_food(citizen, city);
         update_health(citizen);
-            if (day % 30 == 1)
-    {
-        printf("\n========== RENT DAY ==========\n");
-        for (int i = 0; i < city->citizen_count; i++) pay_rent(city->citizens[i], city);
-    }
-
-    // Log stats to CSV at the end of the day
-    log_stats_to_csv(city, day);
-}
     }
 
     handle_social_interactions(city);
@@ -508,12 +578,19 @@ void simulate_day(struct City *city, int day)
         printf("\n========== RENT DAY ==========\n");
         for (int i = 0; i < city->citizen_count; i++) pay_rent(city->citizens[i], city);
     }
+
+    // Movement update
+    for (int i = 0; i < city->citizen_count; i++)
+    {
+        update_movement(city->citizens[i]);
+    }
+
+    log_stats_to_csv(city, day);
 }
 
 // --- MAIN FUNCTION ---
 int main(void)
 {
-    // Fix for Windows console encoding
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
 
@@ -552,15 +629,12 @@ int main(void)
 
     if (choice == 0) 
     {
-            if (choice == 0) 
-    {
-        // Remove old CSV file if starting a new game
         remove("simcore_stats.csv"); 
-        
-        // ... дальше твой код создания жителей ...
-        struct Citizen genry = {"Genry", 20, 1000, "Engineer", 70, 30, 50, 5000, 0, 50, 50, 50, 85, 10, 0, {0}};
-        struct Citizen Alex = {"Alex", 25, 1500, "Designer", 80, 20, 60, 4000, 0, 20, 60, 40, 55, 20, 0, {0}};
-        struct Citizen Mia = {"Mia", 19, 700, "Artist", 90, 10, 80, 3000, 40000, 35, 80, 10, 100, 80, 5, {0}};
+
+        // Added 8 zeroes at the end for coordinates
+        struct Citizen genry = {"Genry", 20, 1000, "Engineer", 70, 30, 50, 5000, 0, 50, 50, 50, 85, 10, 0, {0}, 0, 0, 0, 0, 0, 0, 0, 0};
+        struct Citizen Alex = {"Alex", 25, 1500, "Designer", 80, 20, 60, 4000, 0, 20, 60, 40, 55, 20, 0, {0}, 0, 0, 0, 0, 0, 0, 0, 0};
+        struct Citizen Mia = {"Mia", 19, 700, "Artist", 90, 10, 80, 3000, 40000, 35, 80, 10, 100, 80, 5, {0}, 0, 0, 0, 0, 0, 0, 0, 0};
 
         add_citizen(&palaroid, &genry);
         add_citizen(&palaroid, &Alex);
