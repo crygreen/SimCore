@@ -5,8 +5,9 @@
 #include <windows.h> 
 
 #define MAX_CITIZENS 100
+#define MAX_PROFESSIONS 20
 
-// --- BUILDINGS COORDINATES (Must match HTML) ---
+// --- BUILDINGS COORDINATES ---
 int homes_x[4] = {100, 300, 100, 300};
 int homes_y[4] = {100, 100, 500, 500};
 int works_x[2] = {700, 700};
@@ -14,19 +15,23 @@ int works_y[2] = {200, 400};
 int park_x = 500;
 int park_y = 300;
 
-// Career names for printing
-const char *CAREERS[] = {"Engineer", "Designer", "Musician", "Loader"};
+// --- NEW: Profession Structure ---
+struct Profession {
+    char name[30];
+    int hourly_pay;
+    int hours;
+    int stress;
+};
 
 struct Citizen
 {
     char name[20];
     int age;
-    int career_id; // 0=Engineer, 1=Designer, 2=Musician, 3=Loader
+    int profession_id; // Replaces career_id
     int money;
     int mood;
     int addiction;
     int curiosity;
-    int salary;
     int savings;
     int energy;
     int hunger;
@@ -49,6 +54,28 @@ struct City
     int rent_price;
 };
 
+// --- LOAD PROFESSIONS FROM FILE ---
+int load_professions(struct Profession *professions) {
+    FILE *file = fopen("professions.txt", "r");
+    if (file == NULL) {
+        printf("Warning: professions.txt not found.\n");
+        return 0;
+    }
+
+    int count = 0;
+    while (fscanf(file, "%29[^,], %d, %d, %d", 
+                  professions[count].name, 
+                  &professions[count].hourly_pay, 
+                  &professions[count].hours, 
+                  &professions[count].stress) == 4) {
+        count++;
+        if (count >= MAX_PROFESSIONS) break;
+    }
+
+    fclose(file);
+    return count; 
+}
+
 // --- ACTIONS ---
 
 void rest(struct Citizen *citizen)
@@ -61,39 +88,32 @@ void rest(struct Citizen *citizen)
     if (citizen->mood > 100) citizen->mood = 100;
 }
 
-void work(struct Citizen *citizen, int hours)
+void work(struct Citizen *citizen, struct Profession prof)
 {
     if (citizen->energy < 20 || citizen->health < 30) return;
 
-    // Salary depends on career
-    int income = hours * citizen->salary / 160;
+    // Calculate income based on hourly pay and hours from file
+    int income = prof.hours * prof.hourly_pay;
+
+    // Apply stress from profession
+    citizen->energy -= prof.stress;
+    citizen->mood -= prof.stress / 2;
     
-    // Loaders lose more energy and mood, but get paid a bit more per hour
-    if (citizen->career_id == 3) {
-        citizen->energy -= hours * 8;
-        citizen->mood -= hours * 7;
-        income = income * 120 / 100; 
-    } else {
-        citizen->energy -= hours * 5;
-        citizen->mood -= hours * 5;
-    }
-
-    if (citizen->health < 60) income = income * 70 / 100;
-
-    citizen->money += income;
-    citizen->hunger += hours * 5;
-    if (citizen->hunger > 100) citizen->hunger = 100;
-    citizen->sleepiness += hours * 5;
-    if (citizen->sleepiness > 100) citizen->sleepiness = 100;
     if (citizen->energy < 0) citizen->energy = 0;
     if (citizen->mood < 0) citizen->mood = 0;
+
+    citizen->money += income;
+    citizen->hunger += 30;
+    if (citizen->hunger > 100) citizen->hunger = 100;
+    citizen->sleepiness += 30;
+    if (citizen->sleepiness > 100) citizen->sleepiness = 100;
 }
 
 void make_music(struct Citizen *citizen)
 {
     if (citizen->energy < 30) return;
     citizen->energy -= 20;
-    citizen->mood += (citizen->career_id == 2) ? 20 : 5; // Musicians get more joy
+    citizen->mood += 10; 
     if (citizen->mood > 100) citizen->mood = 100;
 
     int skill_gain = (rand() % 5) + 1;
@@ -108,7 +128,7 @@ void make_music(struct Citizen *citizen)
     }
 }
 
-void execute_decision(struct Citizen *citizen, int decision)
+void execute_decision(struct Citizen *citizen, int decision, struct Profession *professions)
 {
     if (decision == 0) { 
         citizen->target_x = citizen->home_x; 
@@ -124,7 +144,7 @@ void execute_decision(struct Citizen *citizen, int decision)
     else if (decision == 2) { 
         citizen->target_x = citizen->work_x; 
         citizen->target_y = citizen->work_y;
-        work(citizen, 8); 
+        work(citizen, professions[citizen->profession_id]); 
     }
     else if (decision == 3) { 
         citizen->target_x = citizen->work_x; 
@@ -133,21 +153,21 @@ void execute_decision(struct Citizen *citizen, int decision)
     }
 }
 
-int make_decision(struct Citizen *citizen)
+// --- DECISION LOGIC ---
+int make_decision(struct Citizen *citizen, struct Profession *professions)
 {
     int weights[4] = {30, 50, 50, 10}; 
-    weights[1] += citizen->curiosity;
-    weights[3] += citizen->music_skill / 2; 
-
-    // Musicians prefer making music, Loaders prefer staying home
-    if (citizen->career_id == 2) weights[3] += 30;
-    if (citizen->career_id == 3) weights[0] += 20;
+    
+    // Musicians prefer making music
+    if (strstr(professions[citizen->profession_id].name, "Musician") != NULL) {
+        weights[3] += 50;
+    } else {
+        weights[3] -= 30; // Others don't care much about music
+    }
 
     if (citizen->mood < 50) weights[0] += 50 - citizen->mood;
-    weights[2] -= citizen->addiction;
-    weights[0] += citizen->addiction / 2;
-
-    if (citizen->health < 60) { weights[0] += 60 - citizen->health; weights[2] -= 60 - citizen->health; }
+    if (citizen->health < 60) weights[0] += 60 - citizen->health;
+    
     for (int i = 0; i < 4; i++) { if (weights[i] < 0) weights[i] = 0; }
 
     int total_weight = weights[0] + weights[1] + weights[2] + weights[3];
@@ -173,7 +193,6 @@ const char *decision_name(int decision)
 }
 
 // --- CITY MANAGEMENT ---
-
 void add_citizen(struct City *city, struct Citizen *new_citizen)
 {
     if (city->citizen_count >= city->capacity)
@@ -185,20 +204,13 @@ void add_citizen(struct City *city, struct Citizen *new_citizen)
     city->citizens[city->citizen_count++] = new_citizen;
 }
 
-struct Citizen create_random_citizen(char *name)
+struct Citizen create_random_citizen(char *name, int prof_count)
 {
     struct Citizen c;
     strcpy(c.name, name);
     c.age = 18 + (rand() % 15);
     
-    // Random Career (0 to 3)
-    c.career_id = rand() % 4;
-    
-    // Base salary depends on career
-    if (c.career_id == 0) c.salary = 5000; // Engineer
-    else if (c.career_id == 1) c.salary = 4000; // Designer
-    else if (c.career_id == 2) c.salary = 3000; // Musician
-    else c.salary = 2500; // Loader
+    c.profession_id = rand() % prof_count; // Pick random profession from file
 
     c.money = 500 + (rand() % 1500);
     c.mood = 50 + (rand() % 50);
@@ -209,8 +221,8 @@ struct Citizen create_random_citizen(char *name)
     c.hunger = rand() % 50;
     c.sleepiness = rand() % 50;
     c.health = 50 + (rand() % 50);
-    c.music_skill = (c.career_id == 2) ? 50 + rand()%50 : rand() % 50; 
-    c.fame = (c.career_id == 2) ? rand()%20 : 0;
+    c.music_skill = rand() % 50; 
+    c.fame = 0;
     
     int h = rand() % 4;
     c.home_x = homes_x[h]; c.home_y = homes_y[h];
@@ -273,33 +285,31 @@ void update_movement(struct Citizen *citizen)
     else if (citizen->y > citizen->target_y) { citizen->y -= speed; if (citizen->y < citizen->target_y) citizen->y = citizen->target_y; }
 }
 
-void log_stats_to_csv(struct City *city, int day)
+void log_stats_to_csv(struct City *city, int day, struct Profession *professions)
 {
     FILE *file = fopen("simcore_stats.csv", "a");
     if (file == NULL) return;
     fseek(file, 0, SEEK_END);
     if (ftell(file) == 0) {
-        fprintf(file, "Day,Name,Money,Health,Mood,Energy,MusicSkill,Fame,X,Y,Career\n");
+        fprintf(file, "Day,Name,Money,Health,Mood,Energy,MusicSkill,Fame,X,Y,Profession\n");
     }
     for (int i = 0; i < city->citizen_count; i++) {
         struct Citizen *c = city->citizens[i];
         fprintf(file, "%d,%s,%d,%d,%d,%d,%d,%d,%d,%d,%s\n",
-                day, c->name, c->money, c->health, c->mood, c->energy, c->music_skill, c->fame, c->x, c->y, CAREERS[c->career_id]);
+                day, c->name, c->money, c->health, c->mood, c->energy, c->music_skill, c->fame, c->x, c->y, professions[c->profession_id].name);
     }
     fclose(file);
 }
+
 void process_ai_actions(struct City *city) {
     FILE *file = fopen("ai_actions.txt", "r");
-    if (file == NULL) return; // No actions for today
+    if (file == NULL) return; 
 
     char action[20], from_name[20], to_name[20];
     int amount;
 
-    // Read the action (e.g., "DONATE Max Ivan 50")
     if (fscanf(file, "%s %s %s %d", action, from_name, to_name, &amount) == 4) {
         int from_idx = -1, to_idx = -1;
-        
-        // Find indices of the citizens
         for (int i = 0; i < city->citizen_count; i++) {
             if (strcmp(city->citizens[i]->name, from_name) == 0) from_idx = i;
             if (strcmp(city->citizens[i]->name, to_name) == 0) to_idx = i;
@@ -325,33 +335,27 @@ void process_ai_actions(struct City *city) {
             }
         }
     }
-
     fclose(file);
-    remove("ai_actions.txt"); // Delete file after processing so it doesn't repeat
+    remove("ai_actions.txt"); 
 }
-void simulate_day(struct City *city, int day, int is_auto)
+
+void simulate_day(struct City *city, int day, int is_auto, struct Profession *professions, int prof_count)
 {
     if (!is_auto) printf("\n\n========== DAY %d ==========\n", day);
     
-    // --- ВСТАВЬ ВОТ ЭТУ СТРОЧКУ ЗДЕСЬ ---
-    process_ai_actions(city); 
-    // ------------------------------------
+    process_ai_actions(city);
     
     int actions[MAX_CITIZENS]; 
 
-    // 1. DECISIONS & ACTIONS
-    for (int i = 0; i < city->citizen_count; i++)
-    {
+    for (int i = 0; i < city->citizen_count; i++) {
         struct Citizen *citizen = city->citizens[i];
-        int decision = make_decision(citizen);
+        int decision = make_decision(citizen, professions);
         actions[i] = decision;
-        printf("\n%s decision: %s\n", citizen->name, decision_name(decision));
-        execute_decision(citizen, decision);
+        if (!is_auto) printf("\n%s (%s) decision: %s\n", citizen->name, professions[citizen->profession_id].name, decision_name(decision));
+        execute_decision(citizen, decision, professions);
         buy_food(citizen, city);
         update_health(citizen);
     }
-
-    // ... дальше идет остальной код (социалка, сон, ивенты и т.д.)
 
     for (int i = 0; i < city->citizen_count; i++) {
         struct Citizen *citizen = city->citizens[i];
@@ -361,7 +365,7 @@ void simulate_day(struct City *city, int day, int is_auto)
         if (day % 30 == 1) pay_rent(citizen, city);
         update_movement(citizen);
     }
-    log_stats_to_csv(city, day);
+    log_stats_to_csv(city, day, professions);
 }
 
 int main(int argc, char *argv[])
@@ -369,7 +373,14 @@ int main(int argc, char *argv[])
     SetConsoleOutputCP(CP_UTF8);
     srand((unsigned int)time(NULL));
 
-    // Check for auto-mode argument (e.g., .\main 100)
+    struct Profession professions[MAX_PROFESSIONS];
+    int prof_count = load_professions(professions);
+    if (prof_count == 0) {
+        printf("CRITICAL ERROR: No professions loaded. Exiting.\n");
+        return 1;
+    }
+    printf("Loaded %d professions.\n", prof_count);
+
     int auto_days = 0;
     if (argc > 1) auto_days = atoi(argv[1]);
 
@@ -382,14 +393,12 @@ int main(int argc, char *argv[])
     palaroid.citizens = malloc(palaroid.capacity * sizeof(struct Citizen*));
 
     int current_day = 1; 
-    
-    // Remove old CSV to start fresh
     remove("simcore_stats.csv"); 
 
-    // Create starting citizens (fixed coordinates and careers)
-    struct Citizen genry = {"Genry", 20, 0, 1000, 70, 30, 50, 5000, 0, 50, 50, 50, 85, 10, 0, {0}, 100, 100, 100, 100, 100, 100, 700, 200};
-    struct Citizen Alex = {"Alex", 25, 1, 1500, 80, 20, 60, 4000, 0, 20, 60, 40, 55, 20, 0, {0}, 300, 100, 300, 100, 300, 100, 700, 400};
-    struct Citizen Mia = {"Mia", 19, 2, 700, 90, 10, 80, 3000, 40000, 35, 80, 10, 100, 80, 5, {0}, 100, 500, 100, 500, 100, 500, 700, 200};
+    // Create starting citizens
+    struct Citizen genry = {"Genry", 20, 0, 1000, 70, 30, 50, 0, 50, 50, 50, 85, 10, 0, {0}, 100, 100, 100, 100, 100, 100, 700, 200};
+    struct Citizen Alex = {"Alex", 25, 1, 1500, 80, 20, 60, 0, 20, 60, 40, 55, 20, 0, {0}, 300, 100, 300, 100, 300, 100, 700, 400};
+    struct Citizen Mia = {"Mia", 19, 2, 700, 90, 10, 80, 0, 35, 80, 10, 100, 80, 5, {0}, 100, 500, 100, 500, 100, 500, 700, 200};
 
     add_citizen(&palaroid, &genry);
     add_citizen(&palaroid, &Alex);
@@ -398,21 +407,21 @@ int main(int argc, char *argv[])
     char *new_names[10] = {"Ivan", "Elena", "Max", "Sofia", "Dmitry", "Anna", "Pavel", "Ksenia", "Artem", "Vika"};
     for (int i = 0; i < 10; i++) {
         struct Citizen *ptr = malloc(sizeof(struct Citizen));
-        *ptr = create_random_citizen(new_names[i]); 
+        *ptr = create_random_citizen(new_names[i], prof_count); 
         add_citizen(&palaroid, ptr);
     }
 
     if (auto_days > 0) {
         printf("Auto-simulating %d days...\n", auto_days);
         for (int d = 1; d <= auto_days; d++) {
-            simulate_day(&palaroid, d, 1);
+            simulate_day(&palaroid, d, 1, professions, prof_count);
             current_day++;
         }
         printf("Done! Data saved to simcore_stats.csv.\n");
     } else {
         while (1) {
             system("cls");
-            simulate_day(&palaroid, current_day, 0);
+            simulate_day(&palaroid, current_day, 0, professions, prof_count);
             printf("\n[Day %d finished. Press ENTER for Day %d]\n", current_day, current_day + 1);
             getchar(); 
             current_day++; 
