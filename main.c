@@ -288,33 +288,70 @@ void log_stats_to_csv(struct City *city, int day)
     }
     fclose(file);
 }
+void process_ai_actions(struct City *city) {
+    FILE *file = fopen("ai_actions.txt", "r");
+    if (file == NULL) return; // No actions for today
 
+    char action[20], from_name[20], to_name[20];
+    int amount;
+
+    // Read the action (e.g., "DONATE Max Ivan 50")
+    if (fscanf(file, "%s %s %s %d", action, from_name, to_name, &amount) == 4) {
+        int from_idx = -1, to_idx = -1;
+        
+        // Find indices of the citizens
+        for (int i = 0; i < city->citizen_count; i++) {
+            if (strcmp(city->citizens[i]->name, from_name) == 0) from_idx = i;
+            if (strcmp(city->citizens[i]->name, to_name) == 0) to_idx = i;
+        }
+
+        if (from_idx != -1 && to_idx != -1) {
+            struct Citizen *giver = city->citizens[from_idx];
+            struct Citizen *receiver = city->citizens[to_idx];
+
+            if (strcmp(action, "DONATE") == 0 && giver->money >= amount) {
+                giver->money -= amount;
+                receiver->money += amount;
+                giver->relationships[to_idx] += 10;
+                receiver->relationships[from_idx] += 10;
+                printf("\n[AI Agent]: %s donated %d rubles to %s!\n", giver->name, amount, receiver->name);
+            } 
+            else if (strcmp(action, "ARGUE") == 0) {
+                giver->mood -= 10; if(giver->mood < 0) giver->mood = 0;
+                receiver->mood -= 10; if(receiver->mood < 0) receiver->mood = 0;
+                giver->relationships[to_idx] -= 15;
+                receiver->relationships[from_idx] -= 15;
+                printf("\n[AI Agent]: %s and %s had a big argument!\n", giver->name, receiver->name);
+            }
+        }
+    }
+
+    fclose(file);
+    remove("ai_actions.txt"); // Delete file after processing so it doesn't repeat
+}
 void simulate_day(struct City *city, int day, int is_auto)
 {
     if (!is_auto) printf("\n\n========== DAY %d ==========\n", day);
+    
+    // --- ВСТАВЬ ВОТ ЭТУ СТРОЧКУ ЗДЕСЬ ---
+    process_ai_actions(city); 
+    // ------------------------------------
+    
     int actions[MAX_CITIZENS]; 
 
-    for (int i = 0; i < city->citizen_count; i++) {
+    // 1. DECISIONS & ACTIONS
+    for (int i = 0; i < city->citizen_count; i++)
+    {
         struct Citizen *citizen = city->citizens[i];
         int decision = make_decision(citizen);
         actions[i] = decision;
+        printf("\n%s decision: %s\n", citizen->name, decision_name(decision));
         execute_decision(citizen, decision);
         buy_food(citizen, city);
         update_health(citizen);
     }
 
-    for (int i = 0; i < city->citizen_count; i++) {
-        for (int j = i + 1; j < city->citizen_count; j++) {
-            if (actions[i] == actions[j] && actions[i] != 0) {
-                struct Citizen *c1 = city->citizens[i];
-                struct Citizen *c2 = city->citizens[j];
-                c1->relationships[j] += 2; c2->relationships[i] += 2;
-                if (actions[i] == 3 && c1->music_skill > 50 && c2->music_skill > 50) {
-                    c1->fame += 5; c2->fame += 5;
-                }
-            }
-        }
-    }
+    // ... дальше идет остальной код (социалка, сон, ивенты и т.д.)
 
     for (int i = 0; i < city->citizen_count; i++) {
         struct Citizen *citizen = city->citizens[i];
